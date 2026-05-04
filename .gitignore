@@ -17,7 +17,7 @@ ENV/
 !.env.example
 
 # Model files and large artifacts
-app/saved_model/
+app/saved_model/*
 *.pt
 *.pth
 *.ckpt
@@ -25,6 +25,7 @@ app/saved_model/
 *.h5
 *.pkl
 *.joblib
+!app/saved_model/mobilenet_v2_seed42_best.pt
 
 # Generated outputs
 outputs/
