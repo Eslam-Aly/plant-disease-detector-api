@@ -297,15 +297,6 @@ def predict_image(contents: bytes) -> dict:
         explanation_support=explanation_support,
     )
 
-    print("----- Prediction Debug -----")
-    print("Label:", CLASS_NAMES[pred_idx])
-    print("Confidence:", confidence)
-    print("Uncertainty:", uncertainty)
-    print("Focus ratio:", round(focus_ratio, 4))
-    print("Explanation support:", explanation_support)
-    print("Recommendation:", recommendation)
-    print("Grad-CAM available:", gradcam_base64 is not None)
-    print("----------------------------")
 
     return {
         "label": CLASS_NAMES[pred_idx],
