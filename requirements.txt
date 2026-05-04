@@ -7,3 +7,4 @@ torchvision
 numpy
 pymongo
 python-dotenv
+huggingface_hub

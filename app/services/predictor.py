@@ -2,6 +2,7 @@ from io import BytesIO
 from pathlib import Path
 import base64
 import json
+import os
 import numpy as np
 from typing import Literal
 
@@ -10,13 +11,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
 from torchvision import models, transforms
+from huggingface_hub import hf_hub_download
 
 from app.services.recommender import decide_recommendation
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-MODEL_PATH = BASE_DIR / "app" / "saved_model" / "mobilenet_v2_seed42_best.pt"
+SAVED_MODEL_DIR = BASE_DIR / "app" / "saved_model"
+LOCAL_MODEL_PATH = SAVED_MODEL_DIR / "mobilenet_v2_seed42_best.pt"
 CLASS_MAPPING_PATH = BASE_DIR / "app" / "class_mapping.json"
+HF_MODEL_REPO_ID = os.getenv("HF_MODEL_REPO_ID", "")
+HF_MODEL_FILENAME = os.getenv("HF_MODEL_FILENAME", "mobilenet_v2_seed42_best.pt")
+HF_TOKEN = os.getenv("HF_TOKEN", "")
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 IMAGE_SIZE = 224
@@ -81,13 +87,38 @@ def create_model(num_classes: int) -> nn.Module:
     return model.to(DEVICE)
 
 
+def resolve_model_path() -> Path:
+    """
+    Return the local model path. If the checkpoint is missing locally,
+    try downloading it from Hugging Face Hub.
+    """
+    if LOCAL_MODEL_PATH.exists():
+        return LOCAL_MODEL_PATH
+
+    if not HF_MODEL_REPO_ID:
+        raise FileNotFoundError(
+            f"Missing model checkpoint: {LOCAL_MODEL_PATH}. "
+            "Set HF_MODEL_REPO_ID to download it from Hugging Face Hub."
+        )
+
+    SAVED_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+    downloaded_path = hf_hub_download(
+        repo_id=HF_MODEL_REPO_ID,
+        filename=HF_MODEL_FILENAME,
+        token=HF_TOKEN or None,
+        local_dir=str(SAVED_MODEL_DIR),
+        local_dir_use_symlinks=False,
+    )
+
+    return Path(downloaded_path)
+
 
 def load_model() -> tuple[nn.Module, ActivationGradientHook]:
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(f"Missing model checkpoint: {MODEL_PATH}")
+    model_path = resolve_model_path()
 
     model = create_model(NUM_CLASSES)
-    state_dict = torch.load(MODEL_PATH, map_location=DEVICE)
+    state_dict = torch.load(model_path, map_location=DEVICE)
     model.load_state_dict(state_dict)
     model.eval()
 
