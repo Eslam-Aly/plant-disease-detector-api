@@ -1,9 +1,11 @@
-import json
-from pathlib import Path
-
+import os
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pymongo import MongoClient
+from pymongo.errors import PyMongoError
 
+load_dotenv()
 from app.schemas import (
     PredictionResponse,
     StudySubmissionRequest,
@@ -12,7 +14,13 @@ from app.schemas import (
 from app.services.predictor import predict_image
 
 
-RESULTS_PATH = Path(__file__).resolve().parent / "data" / "results.json"
+MONGODB_URI = os.getenv("MONGODB_URI", "")
+MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "plant-disease-detector")
+MONGODB_COLLECTION_NAME = os.getenv("MONGODB_COLLECTION_NAME", "study_submissions")
+
+mongo_client = MongoClient(MONGODB_URI) if MONGODB_URI else None
+mongo_db = mongo_client[MONGODB_DB_NAME] if mongo_client else None
+study_collection = mongo_db[MONGODB_COLLECTION_NAME] if mongo_db is not None else None
 
 
 app = FastAPI(title="Plant Disease Detector API", version="0.2.0")
@@ -34,38 +42,27 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-def load_study_results() -> list:
-    if not RESULTS_PATH.exists():
-        RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        RESULTS_PATH.write_text("[]", encoding="utf-8")
-        return []
-
-    try:
-        data = json.loads(RESULTS_PATH.read_text(encoding="utf-8"))
-        if isinstance(data, list):
-            return data
-    except Exception:
-        pass
-
-    RESULTS_PATH.write_text("[]", encoding="utf-8")
-    return []
-
-
 @app.post("/study/submit", response_model=StudySubmissionResponse)
 async def submit_study(payload: StudySubmissionRequest) -> StudySubmissionResponse:
-    submissions = load_study_results()
-    submissions.append(payload.model_dump())
+    if study_collection is None:
+        raise HTTPException(
+            status_code=500,
+            detail="MongoDB is not configured. Please set MONGODB_URI.",
+        )
 
-    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    RESULTS_PATH.write_text(
-        json.dumps(submissions, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    try:
+        study_collection.insert_one(payload.model_dump())
+        total_submissions = study_collection.count_documents({})
+    except PyMongoError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save study submission: {exc}",
+        ) from exc
 
     return StudySubmissionResponse(
         success=True,
         message="Study submission saved successfully.",
-        total_submissions=len(submissions),
+        total_submissions=total_submissions,
     )
 
 
